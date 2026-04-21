@@ -34,7 +34,7 @@ git clone https://github.com/ansible-network/content-networking-skills.git
 
 | Skill | Extends | Triggers | Description |
 |---|---|---|---|
-| `network-triage-workflow` | `triage-workflow` | "triage network", "triage ci failure", "run triager", "scan network issues" | Triage bugs, CI failures, and GitHub issues for network collections. Includes 6 known CI patterns, cross-collection cascade detection, and ansible-network-triager integration. |
+| `network-triage-workflow` | `triage-workflow` | "triage network", "triage ci failure", "run triager", "scan network issues" | Triage bugs, CI failures, and GitHub issues for network collections. Includes severity escalators, cross-collection cascade detection, dashboard output, and ansible-network-triager integration. |
 
 ## Architecture
 
@@ -47,12 +47,12 @@ aap-sdlc-harness (generic)
 
 content-networking (this repo)
   ├── network-triage-workflow  ← requires: triage-workflow
-  │                               adds: 6 CI patterns, severity escalators,
-  │                               triager integration, cascade detection
+  │                               adds: severity escalators, triager integration,
+  │                               cascade detection, dashboard output
   └── (more skills coming)
 ```
 
-When `network-triage-workflow` loads, the system also loads `triage-workflow` from harness into the same context. Our skill says "follow the base steps, but check these patterns first and apply these networking-specific rules."
+When `network-triage-workflow` loads, the system also loads `triage-workflow` from harness into the same context. Our skill says "follow the base steps, then apply these networking-specific severity escalators and cross-collection checks."
 
 ## Collections Covered
 
