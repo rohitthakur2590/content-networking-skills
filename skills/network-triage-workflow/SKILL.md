@@ -4,9 +4,10 @@ description: >
   Triage bug reports, CI failures, and GitHub issues for Ansible network
   collections (cisco.ios, cisco.iosxr, arista.eos, ansible.netcommon, etc.).
   Two modes: (1) Scan mode — run ansible-network-triager to surface all
-  unassigned issues and failing CI across repos, then generate a triage
-  report. (2) Direct triage — take a single issue/failure, check known
-  CI patterns, assess severity, and recommend resolution.
+  unassigned issues and failing CI across repos, then generate a categorized
+  triage report with visual dashboard. (2) Direct triage — take a single
+  issue/failure, assess severity, detect cross-collection impact, and
+  recommend resolution.
 version: "1.0"
 type: workflow
 requires:
@@ -142,9 +143,10 @@ For each item from the triager output:
 
 After processing all items, produce a summary:
 - Total items by repo and type
-- Items matching known CI patterns (quick resolution)
+- Items categorized by type (downstream fix, feature, chore, test, bug)
 - Items needing deep triage (new/unknown issues)
 - Cross-collection signals detected
+- Related PR series identified
 - Recommended action order (highest priority first)
 
 ---
@@ -216,8 +218,8 @@ Every triage session should produce a structured report:
 ### Ansible Version: [e.g. stable-2.19 / devel]
 ### Connection Type: [network_cli / netconf / httpapi]
 
-### Known Pattern Match
-[Pattern N: name — OR "No known pattern, new issue"]
+### Category
+[Downstream fix / New feature / Bug report / Chore-CI / Test improvement]
 
 ### Severity: [Critical / Major / Minor / Trivial]
 [Justification, including any escalators applied]
