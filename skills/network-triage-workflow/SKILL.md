@@ -41,7 +41,8 @@ The base `triage-workflow` from harness knows how to:
 - Create/update Jira issues
 
 This networking extension adds:
-- **Network severity escalators** that override the base severity assessment
+- **Base severity matrix** for scan mode — category-specific severity assignment (bug=Major, downstream fix=Major, feature=Minor, test infra=Minor, chore=Trivial)
+- **Network severity escalators** that override the base severity assessment (netcommon=Critical, certified=+1, cascade=Critical)
 - **Cross-collection dependency chain awareness** (netcommon cascades)
 - **Scan mode** using `ansible-network-triager` tool for weekly bulk triage
 - **Network collections in scope** (which repos, modules, connection types)
@@ -135,9 +136,33 @@ This outputs structured JSON:
 
 For each item from the triager output:
 
-1. **Classify the type**: Downstream fix, New feature PR, Bug report, Chore/CI, Molecule/test improvement
+1. **Classify the type**: Downstream fix, New feature PR, Bug report, Chore/CI, Test infrastructure
 2. **Check for cross-collection signals**: Multiple repos showing similar failures = likely cascade
-3. **Assign priority**: Use the severity matrix + network escalators (see below)
+3. **Assign base severity** using the category matrix below, then apply escalators
+
+#### Base Severity Matrix (Scan Mode)
+
+Assign the initial severity based on category. Escalators (see Direct Triage section)
+run AFTER this and can only raise severity, never lower it.
+
+| Category | Base Severity | Rationale |
+|---|---|---|
+| **Bug report** — actual bug or feature request from a user | **Major** | User-facing issue, needs investigation. Escalators may raise to Critical. |
+| **Downstream fix** — PR fixing breakage caused by upstream change | **Major** | Indicates upstream breakage is actively affecting this collection. Check for cascade. |
+| **New feature PR** — adds new functionality to a module | **Minor** | No urgency unless tied to a customer request or release deadline. Standard review cycle. |
+| **Test infrastructure** — Molecule, CISSHGO, integration test framework | **Minor** | Test infra is foundational work that unblocks future development and CI reliability. Not Trivial — these enable the team's testing strategy. |
+| **Chore / CI / Modernization** — dependency bumps, tooling updates, project structure | **Trivial** | No functional change. Auto-merge candidates if CI green. |
+
+**Important distinctions:**
+
+- **Test infrastructure (Minor) vs Chore (Trivial)**: A Molecule + CISSHGO PR that builds
+  mock-device test scenarios is test INFRASTRUCTURE — it's strategic work that enables
+  testing across resource modules. That's Minor, not Trivial. A Dependabot version bump
+  or a pyproject.toml cleanup is a Chore — that's Trivial.
+- **Downstream fix (Major)**: Any PR with "downstream" in the title signals that an
+  upstream change broke something. Always start at Major and check for cascade.
+- **Bug report (Major)**: Even if it looks like a feature request (e.g., "add SSH pubkey
+  want/have check"), it's a user reporting a gap. Start at Major.
 
 #### 4. Generate a triage summary
 
