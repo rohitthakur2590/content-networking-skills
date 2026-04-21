@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ansible Networking — Triage Dashboard</title>
+<style>
+  :root {
+    --red: #cc0000;
+    --red-dark: #990000;
+    --gray-dark: #1a1a1a;
+    --gray-mid: #2d2d2d;
+    --gray-light: #f5f5f5;
+    --border: #e0e0e0;
+    --critical: #d32f2f;
+    --major: #f57c00;
+    --minor: #388e3c;
+    --trivial: #0288d1;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #fafafa; color: #222; line-height: 1.5; }
+
+  /* Header */
+  .header { background: var(--gray-dark); color: white; padding: 28px 40px; }
+  .header-top { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
+  .rh-logo { background: var(--red); color: white; font-weight: 700; font-size: 13px; padding: 4px 10px; border-radius: 3px; letter-spacing: 0.5px; }
+  .header h1 { font-size: 24px; font-weight: 600; }
+  .header .subtitle { color: #aaa; font-size: 14px; margin-top: 4px; }
+  .header .meta { display: flex; gap: 24px; margin-top: 16px; flex-wrap: wrap; }
+  .header .meta-item { color: #ccc; font-size: 13px; }
+  .header .meta-item span { color: white; font-weight: 600; }
+
+  /* Pipeline diagram */
+  .pipeline { background: white; border-bottom: 1px solid var(--border); padding: 28px 40px; }
+  .pipeline h2 { font-size: 15px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 20px; }
+  .pipeline-steps { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+  .pipeline-step { background: var(--gray-light); border: 1px solid var(--border); border-radius: 8px; padding: 14px 20px; min-width: 160px; text-align: center; }
+  .pipeline-step .step-icon { font-size: 24px; margin-bottom: 6px; }
+  .pipeline-step .step-label { font-size: 12px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }
+  .pipeline-step .step-desc { font-size: 12px; color: #777; margin-top: 3px; }
+  .pipeline-step.highlight { background: #fff3e0; border-color: #ffb74d; }
+  .pipeline-step.highlight .step-label { color: #e65100; }
+  .pipeline-arrow { font-size: 22px; color: #bbb; padding: 0 12px; }
+  .pipeline-step.skill-step { background: #e8f5e9; border-color: #81c784; }
+  .pipeline-step.skill-step .step-label { color: #2e7d32; }
+
+  /* Stats bar */
+  .stats-bar { display: flex; gap: 0; border-bottom: 1px solid var(--border); background: white; flex-wrap: wrap; }
+  .stat { flex: 1; padding: 18px 24px; border-right: 1px solid var(--border); text-align: center; min-width: 120px; }
+  .stat:last-child { border-right: none; }
+  .stat .stat-num { font-size: 32px; font-weight: 700; line-height: 1; }
+  .stat .stat-label { font-size: 12px; color: #777; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat.critical .stat-num { color: var(--critical); }
+  .stat.major .stat-num { color: var(--major); }
+  .stat.minor .stat-num { color: var(--minor); }
+  .stat.trivial .stat-num { color: var(--trivial); }
+  .stat.total .stat-num { color: #333; }
+
+  /* Repo breakdown */
+  .repo-bar { display: flex; gap: 0; border-bottom: 1px solid var(--border); background: #fafafa; }
+  .repo-stat { flex: 1; padding: 12px 20px; border-right: 1px solid var(--border); text-align: center; }
+  .repo-stat:last-child { border-right: none; }
+  .repo-stat .repo-name { font-size: 12px; font-weight: 600; color: #1565c0; }
+  .repo-stat .repo-count { font-size: 20px; font-weight: 700; color: #333; margin-top: 2px; }
+
+  /* Main content */
+  .content { padding: 32px 40px; max-width: 1200px; }
+  .section-header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 20px; margin-top: 32px; }
+  .section-header:first-child { margin-top: 0; }
+  .section-header h2 { font-size: 18px; font-weight: 600; }
+  .section-header .section-meta { font-size: 13px; color: #888; }
+
+  /* Category groups */
+  .category-group { margin-bottom: 28px; }
+  .category-label { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; padding: 8px 16px; border-radius: 6px 6px 0 0; display: inline-block; }
+  .cat-downstream { background: #fff3e0; color: #e65100; }
+  .cat-feature { background: #e3f2fd; color: #1565c0; }
+  .cat-chore { background: #f3e5f5; color: #6a1b9a; }
+  .cat-test { background: #e8f5e9; color: #2e7d32; }
+  .cat-bug { background: #ffebee; color: #c62828; }
+
+  /* Issue cards */
+  .issue-card { background: white; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 12px; overflow: hidden; transition: box-shadow 0.2s; }
+  .issue-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+  .issue-header { padding: 14px 20px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid transparent; }
+  .issue-card.expanded .issue-header { border-bottom-color: var(--border); }
+  .issue-num { width: 28px; height: 28px; border-radius: 50%; background: #eee; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #555; flex-shrink: 0; }
+  .sev-badge { padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; flex-shrink: 0; }
+  .sev-critical { background: #ffebee; color: var(--critical); border: 1px solid #ef9a9a; }
+  .sev-major { background: #fff3e0; color: var(--major); border: 1px solid #ffcc02; }
+  .sev-minor { background: #e8f5e9; color: var(--minor); border: 1px solid #a5d6a7; }
+  .sev-trivial { background: #e3f2fd; color: var(--trivial); border: 1px solid #90caf9; }
+  .collection-tag { background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; flex-shrink: 0; }
+  .type-tag { padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; flex-shrink: 0; text-decoration: none; }
+  .type-tag:hover { opacity: 0.85; text-decoration: underline; }
+  .type-pr { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+  .type-issue { background: #fff3e0; color: #e65100; border: 1px solid #ffcc80; }
+  .issue-title { font-size: 14px; font-weight: 500; flex: 1; }
+  .signal-tag { background: #fce4ec; color: #c62828; border: 1px solid #ef9a9a; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; flex-shrink: 0; }
+  .series-tag { background: #e0f2f1; color: #00695c; border: 1px solid #80cbc4; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; flex-shrink: 0; }
+  .expand-icon { color: #bbb; font-size: 18px; flex-shrink: 0; transition: transform 0.2s; }
+  .issue-card.expanded .expand-icon { transform: rotate(180deg); }
+
+  .issue-body { padding: 20px; display: none; }
+  .issue-card.expanded .issue-body { display: block; }
+
+  .triage-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .triage-section h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; font-weight: 600; margin-bottom: 6px; }
+  .triage-section p { font-size: 13px; color: #333; }
+  .triage-section.full-width { grid-column: 1 / -1; }
+
+  .action-box { background: #fff8e1; border: 1px solid #ffe082; border-radius: 6px; padding: 12px 16px; margin-top: 12px; }
+  .action-box .action-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #f57c00; margin-bottom: 4px; }
+  .action-box p { font-size: 13px; color: #333; }
+
+  code { background: #f5f5f5; border: 1px solid #e0e0e0; padding: 1px 5px; border-radius: 3px; font-family: monospace; font-size: 12px; }
+
+  /* Cross-collection signal box */
+  .signal-box { background: #fce4ec; border: 1px solid #ef9a9a; border-radius: 8px; padding: 16px 20px; margin-bottom: 24px; }
+  .signal-box h3 { font-size: 14px; font-weight: 700; color: #c62828; margin-bottom: 8px; }
+  .signal-box p { font-size: 13px; color: #333; }
+
+  /* Priority summary */
+  .priority-summary { background: white; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-top: 32px; }
+  .priority-summary-header { background: var(--gray-dark); color: white; padding: 14px 20px; font-weight: 600; font-size: 15px; }
+  .priority-list { padding: 20px; }
+  .priority-item { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+  .priority-item:last-child { border-bottom: none; }
+  .priority-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+  .dot-red { background: var(--critical); }
+  .dot-orange { background: var(--major); }
+  .dot-yellow { background: #fbc02d; }
+  .dot-green { background: var(--minor); }
+  .priority-text { font-size: 14px; }
+  .priority-text strong { font-weight: 600; }
+  .priority-text .tag { font-size: 12px; color: #888; margin-left: 4px; }
+
+  /* Time savings banner */
+  .time-banner { background: linear-gradient(135deg, #1a1a2e, #16213e); color: white; border-radius: 8px; padding: 28px 32px; margin-top: 32px; display: flex; align-items: center; gap: 40px; flex-wrap: wrap; }
+  .time-stat { text-align: center; }
+  .time-stat .num { font-size: 40px; font-weight: 700; line-height: 1; }
+  .time-stat .label { font-size: 13px; color: #aaa; margin-top: 4px; }
+  .time-divider { color: #555; font-size: 28px; }
+  .time-desc { flex: 1; min-width: 280px; }
+  .time-desc h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+  .time-desc p { color: #aaa; font-size: 14px; line-height: 1.6; }
+  .time-stat .num.green { color: #81c784; }
+  .time-stat .num.red { color: #ef9a9a; }
+
+  /* Footer */
+  .footer { background: var(--gray-dark); color: #888; padding: 20px 40px; font-size: 12px; margin-top: 48px; }
+  .footer a { color: #81c784; text-decoration: none; }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .header, .pipeline, .content, .footer { padding-left: 20px; padding-right: 20px; }
+    .triage-grid { grid-template-columns: 1fr; }
+    .time-banner { flex-direction: column; text-align: center; gap: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<!--
+  ============================================================================
+  TRIAGE DASHBOARD TEMPLATE — network-triage-workflow v1.0
+  ============================================================================
+
+  This is the EMPTY template. Do NOT hardcode triage data here.
+
+  When the skill runs (scan mode or direct mode), the AI reads this template
+  and generates a POPULATED copy saved as:
+      triage-report-YYYY-MM-DD.html
+
+  HOW TO POPULATE:
+  1. Copy this entire file
+  2. Replace all {{ PLACEHOLDER }} values with real triage data
+  3. For each triaged item, duplicate the ISSUE CARD TEMPLATE block
+  4. For each signal detected, duplicate the SIGNAL BOX block
+  5. For each priority action, duplicate the PRIORITY ITEM block
+  6. Add/remove REPO STAT blocks to match repos scanned
+  7. Add/remove CATEGORY GROUP blocks to match categories found
+  8. Save as triage-report-YYYY-MM-DD.html
+
+  PLACEHOLDER REFERENCE:
+    {{ DATE }}                — triage date, e.g. 2026-04-21
+    {{ PERIOD }}              — lookback period, e.g. Last 14 days
+    {{ COLLECTIONS }}         — collections scanned, e.g. cisco.ios · cisco.iosxr · arista.eos
+    {{ SKILL_VERSION }}       — skill version, e.g. v1.0
+    {{ TOTAL_ITEMS }}         — total items triaged
+    {{ TOTAL_PRS }}           — total Pull Requests
+    {{ TOTAL_ISSUES }}        — total Issues
+    {{ DEEP_TRIAGE_COUNT }}   — items needing deep triage
+    {{ SIGNAL_COUNT }}        — cross-collection signals detected
+    {{ SERIES_COUNT }}        — related PR series detected
+    {{ MANUAL_TIME }}         — estimated manual triage time, e.g. 3-4 hrs
+    {{ ITEM_COUNT_X_TIME }}   — calculation, e.g. 11 items × 20 min avg
+  ============================================================================
+-->
+
+<!-- ==================== HEADER ==================== -->
+<div class="header">
+  <div class="header-top">
+    <div class="rh-logo">RED HAT</div>
+    <h1>Ansible Networking — Weekly Triage Dashboard</h1>
+  </div>
+  <div class="subtitle">network-triage-workflow {{ SKILL_VERSION }} &middot; Scan Mode &middot; content-networking-skills</div>
+  <div class="meta">
+    <div class="meta-item">Date: <span>{{ DATE }}</span></div>
+    <div class="meta-item">Period: <span>{{ PERIOD }}</span></div>
+    <div class="meta-item">Collections scanned: <span>{{ COLLECTIONS }}</span></div>
+    <div class="meta-item">Skill: <span>network-triage-workflow {{ SKILL_VERSION }}</span></div>
+  </div>
+</div>
+
+<!-- ==================== PIPELINE (static — don't change) ==================== -->
+<div class="pipeline">
+  <h2>Triage Pipeline</h2>
+  <div class="pipeline-steps">
+    <div class="pipeline-step highlight">
+      <div class="step-icon">&#129302;</div>
+      <div class="step-label">ansible-network-triager</div>
+      <div class="step-desc">Scans GitHub repos<br>Finds unassigned items<br>Last 14 days</div>
+    </div>
+    <div class="pipeline-arrow">&rarr;</div>
+    <div class="pipeline-step highlight">
+      <div class="step-icon">&#128203;</div>
+      <div class="step-label">triager-json.py</div>
+      <div class="step-desc">Structured JSON output<br>Grouped by repo<br>Summary stats</div>
+    </div>
+    <div class="pipeline-arrow">&rarr;</div>
+    <div class="pipeline-step skill-step">
+      <div class="step-icon">&#129504;</div>
+      <div class="step-label">network-triage-workflow</div>
+      <div class="step-desc"><strong>AI skill layer</strong><br>Categorize &amp; prioritize<br>Cross-collection signals</div>
+    </div>
+    <div class="pipeline-arrow">&rarr;</div>
+    <div class="pipeline-step skill-step">
+      <div class="step-icon">&#9989;</div>
+      <div class="step-label">Triage Dashboard</div>
+      <div class="step-desc"><strong>This report</strong><br>Priority actions<br>Jira-ready output</div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== STATS BAR ==================== -->
+<div class="stats-bar">
+  <div class="stat total"><div class="stat-num">{{ TOTAL_ITEMS }}</div><div class="stat-label">Items Triaged</div></div>
+  <div class="stat total"><div class="stat-num">{{ TOTAL_PRS }}</div><div class="stat-label">Pull Requests</div></div>
+  <div class="stat total"><div class="stat-num">{{ TOTAL_ISSUES }}</div><div class="stat-label">Issues</div></div>
+  <div class="stat critical"><div class="stat-num">{{ DEEP_TRIAGE_COUNT }}</div><div class="stat-label">Needs Deep Triage</div></div>
+  <div class="stat"><div class="stat-num" style="color:#c62828">{{ SIGNAL_COUNT }}</div><div class="stat-label">Cross-Collection Signals</div></div>
+  <div class="stat"><div class="stat-num" style="color:#00695c">{{ SERIES_COUNT }}</div><div class="stat-label">Related Series</div></div>
+</div>
+
+<!-- REPO BREAKDOWN — add/remove repo-stat blocks to match repos scanned -->
+<div class="repo-bar">
+  <!-- {{ REPO_STAT: repeat for each repo }}
+  <div class="repo-stat"><div class="repo-name">{{ REPO_NAME }}</div><div class="repo-count">{{ REPO_ITEM_COUNT }}</div></div>
+  -->
+</div>
+
+<div class="content">
+
+  <!-- ==================== CROSS-COLLECTION SIGNALS ==================== -->
+  <!-- Only include this section if signals were detected. Remove if none. -->
+  <!--
+  {{ SIGNAL_BOX: repeat for each signal detected }}
+  <div class="section-header">
+    <h2>Cross-Collection Signals Detected</h2>
+  </div>
+  <div class="signal-box">
+    <h3>&#9888;&#65039; {{ SIGNAL_TITLE }}</h3>
+    <p>{{ SIGNAL_DESCRIPTION }}</p>
+  </div>
+  -->
+
+  <!-- ==================== CATEGORIZED ITEMS ==================== -->
+  <div class="section-header">
+    <h2>Triaged Items by Category</h2>
+    <span class="section-meta">Click any item to expand the triage details</span>
+  </div>
+
+  <!--
+    ===================================================================
+    CATEGORY GROUP TEMPLATE — repeat for each category found
+    ===================================================================
+    Available category labels (use the appropriate CSS class):
+      cat-test        — Test improvements (green)
+      cat-feature     — Feature PRs (blue)
+      cat-chore       — Chore / CI / Modernization (purple)
+      cat-downstream  — Downstream fixes (orange)
+      cat-bug         — Bug reports / Feature requests (red)
+    ===================================================================
+  -->
+  <!--
+  <div class="category-group">
+    <div class="category-label {{ CATEGORY_CSS_CLASS }}">{{ CATEGORY_TITLE }}</div>
+
+    ===================================================================
+    ISSUE CARD TEMPLATE — repeat for each item in this category
+    ===================================================================
+
+    REQUIRED FIELDS:
+      {{ ITEM_NUM }}         — sequential number (1, 2, 3...)
+      {{ SEV_CLASS }}        — sev-critical | sev-major | sev-minor | sev-trivial
+      {{ SEV_LABEL }}        — Critical | Major | Minor | Trivial
+      {{ COLLECTION }}       — e.g. cisco.ios
+      {{ GITHUB_URL }}       — full GitHub URL, e.g. https://github.com/ansible-collections/cisco.ios/pull/1325
+      {{ TYPE_CSS }}         — type-pr | type-issue
+      {{ TYPE_LABEL }}       — e.g. PR #1325 | Issue #1322
+      {{ TITLE }}            — issue/PR title text
+
+    OPTIONAL TAGS (include if applicable, omit if not):
+      signal-tag     — for cross-collection signals
+      series-tag     — for related PR series (include series position, e.g. "Series 1/3")
+
+    TRIAGE BODY FIELDS:
+      Populate the triage-grid with relevant sections. Common sections:
+        Category, Component, Assessment, Root Cause, Cross-Collection Impact,
+        Related PRs, Dependency, Review Priority, Workaround, Production Risk
+      Use class="full-width" for sections that span both columns.
+      Include an action-box with Recommended Action.
+    ===================================================================
+
+    <div class="issue-card" onclick="toggle(this)">
+      <div class="issue-header">
+        <div class="issue-num">{{ ITEM_NUM }}</div>
+        <span class="sev-badge {{ SEV_CLASS }}">{{ SEV_LABEL }}</span>
+        <span class="collection-tag">{{ COLLECTION }}</span>
+        <a href="{{ GITHUB_URL }}" target="_blank" class="type-tag {{ TYPE_CSS }}" onclick="event.stopPropagation()">{{ TYPE_LABEL }} &#8599;</a>
+        <span class="issue-title">{{ TITLE }}</span>
+        <span class="expand-icon">&#9662;</span>
+      </div>
+      <div class="issue-body">
+        <div class="triage-grid">
+          <div class="triage-section">
+            <h4>{{ SECTION_TITLE }}</h4>
+            <p>{{ SECTION_CONTENT }}</p>
+          </div>
+        </div>
+        <div class="action-box">
+          <div class="action-label">Recommended Action</div>
+          <p>{{ RECOMMENDED_ACTION }}</p>
+        </div>
+      </div>
+    </div>
+
+  </div>  end category-group
+  -->
+
+  <!-- ==================== PRIORITY SUMMARY ==================== -->
+  <div class="priority-summary">
+    <div class="priority-summary-header">Priority Actions This Week</div>
+    <div class="priority-list">
+      <!--
+        PRIORITY ITEM TEMPLATE — repeat for each priority action, highest first
+        Use dot classes: dot-red (urgent), dot-orange (high), dot-yellow (medium), dot-green (low)
+      -->
+      <!--
+      <div class="priority-item">
+        <div class="priority-dot {{ DOT_CLASS }}"></div>
+        <div class="priority-text"><strong>{{ PRIORITY_LEVEL }}:</strong> {{ PRIORITY_DESCRIPTION }} <span class="tag">({{ ITEM_REFS }})</span></div>
+      </div>
+      -->
+    </div>
+  </div>
+
+  <!-- ==================== TIME SAVINGS ==================== -->
+  <div class="time-banner">
+    <div class="time-stat">
+      <div class="num red">{{ MANUAL_TIME }}</div>
+      <div class="label">Manual triage time<br>({{ ITEM_COUNT_X_TIME }})</div>
+    </div>
+    <div class="time-divider">&rarr;</div>
+    <div class="time-stat">
+      <div class="num green">&lt; 5 min</div>
+      <div class="label">With agentic triage<br>(paste list + run skill)</div>
+    </div>
+    <div class="time-divider">+</div>
+    <div class="time-desc">
+      <h3>What you get that you didn't before</h3>
+      <p>{{ TIME_SAVINGS_DESCRIPTION }}</p>
+    </div>
+  </div>
+
+</div>
+
+<!-- ==================== FOOTER (static — don't change) ==================== -->
+<div class="footer">
+  <strong style="color:#aaa">Ansible Networking &mdash; Content Skills</strong> &middot;
+  Triager: <a href="https://github.com/ansible-network/ansible-network-triager">ansible-network-triager</a> &middot;
+  Skill: <a href="https://github.com/ansible-network/content-networking-skills">network-triage-workflow</a> &middot;
+  Generated by <code style="color:#81c784">network-triage-workflow {{ SKILL_VERSION }}</code>
+</div>
+
+<script>
+function toggle(card) {
+  card.classList.toggle('expanded');
+}
+</script>
+</body>
+</html>
